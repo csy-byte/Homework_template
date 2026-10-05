@@ -9,7 +9,7 @@ const COLORS = {
 
 // 움직임 바꾸기
 const SETTINGS = {
-  wallHeight: 200,     // 책상 위로 보이는 벽 높이
+  wallHeight: 300,     // 책상 위로 보이는 벽 높이
   gravity: 1.5,        // 낙하 속도
   friction: 0.025,     // 책상 위에서 멈추는 정도
   throwPower: 1.1,     // 던지는 힘
@@ -157,9 +157,10 @@ function draw() {
   if (showTitle) {
     fill(COLORS.ink);
     textAlign(CENTER, CENTER);
-    textFont('Arial');
+    textFont('Helvetica');
     textSize(Math.min(64, layout.w * .085));
-    text('Clear the table', layout.w / 2, layout.top / 2);
+    text('Clear the Table', layout.w * 0.7, layout.top * 0.4
+    );
   }
   pop();
 }
