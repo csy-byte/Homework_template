@@ -1,0 +1,233 @@
+/* ============================================================
+   style.css — HTML 부분(글쓰기 창, 버튼, 확인 창)의 모양
+   색을 바꾸고 싶으면 맨 위 :root의 변수만 고치면 된다.
+   ============================================================ */
+:root {
+  --bg: #f9e4e1;
+  --paper: #ffffff;
+  --paper-line: #e6dcc6;
+  --ink: #1c140e;
+  --muted: #7a6e60;
+  --red: #c8102e;
+  --green: #0f5a2a;
+  --silk: #aaf7f7;
+  --rod: #51470e;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  font-family: 'Noto Serif KR', serif;
+  color: var(--ink);
+}
+
+#stage {
+  width: 100vw;
+  height: 100vh;
+}
+#stage canvas { display: block; }
+
+/* ---------- 모달(창) 배경 ---------- */
+#modal-root, .confirm-layer {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(70, 30, 20, 0.35);
+  backdrop-filter: blur(2px);
+  z-index: 10;
+}
+.confirm-layer { z-index: 20; background: rgba(30, 10, 15, 0.35); }
+#modal-root.hidden { display: none; }
+
+/* ---------- 한지 느낌의 창 ----------
+   .sheet-wrap : 바깥 틀 (위아래 두루마리 축, 그림자, 펼침 효과)
+   .sheet      : 안쪽 내용. 내용이 길어도 스크롤바는 보이지 않게 숨긴다 */
+.sheet-wrap {
+  position: relative;
+  width: min(560px, calc(100vw - 32px));
+  background: var(--paper);
+  border-top: 14px solid var(--silk);
+  border-bottom: 14px solid var(--silk);
+  box-shadow: 0 18px 50px rgba(70, 30, 20, 0.35);
+  animation: unroll 0.35s ease-out;
+}
+.sheet-wrap::before, .sheet-wrap::after {
+  content: '';
+  position: absolute;
+  left: -10px; right: -10px;
+  height: 8px;
+  background: var(--rod);
+  border-radius: 4px;
+}
+.sheet-wrap::before { top: -18px; }
+.sheet-wrap::after { bottom: -18px; }
+.sheet-wrap.still { animation: none; }
+.sheet-wrap.small { width: min(400px, calc(100vw - 32px)); }
+
+.sheet {
+  max-height: calc(100vh - 80px);
+  padding: 30px 34px 26px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;            /* Firefox: 스크롤바 숨김 */
+}
+.sheet::-webkit-scrollbar { display: none; }  /* Safari·Chrome: 스크롤바 숨김 */
+
+@keyframes unroll {
+  from { clip-path: inset(0 0 100% 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+
+h2 { margin: 4px 0 6px; font-size: 22px; font-weight: 900; }
+h3 { margin: 18px 0 8px; font-size: 15px; }
+.eyebrow { margin: 0; font-size: 12px; color: var(--muted); letter-spacing: 0.04em; }
+.hint { margin: 0 0 14px; font-size: 14px; line-height: 1.6; color: var(--muted); }
+.note { font-size: 13px; line-height: 1.6; color: var(--muted); }
+.red { color: var(--red); }
+
+/* 단계 표시 ① ② ③ */
+.steps {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 18px;
+  font-size: 12px;
+  color: #b9ad98;
+}
+.steps i { flex: 1; height: 1px; background: var(--paper-line); }
+.step b { margin-right: 4px; font-size: 16px; }
+.step.now { color: var(--ink); font-weight: 700; }
+.step.now b { color: var(--red); }
+.step.done { color: var(--muted); }
+.step.done b { color: var(--ink); }
+
+/* 입력 칸 */
+textarea, input[type="text"] {
+  display: block;
+  width: 100%;
+  padding: 12px 14px;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--ink);
+  background: rgba(255,255,255,0.65);
+  border: 1px solid var(--paper-line);
+  border-radius: 2px;
+  outline: none;
+  resize: vertical;
+}
+textarea:focus, input:focus { border-color: #b8a98c; background: #fff; }
+.shake { animation: shake 0.35s; border-color: var(--red); }
+@keyframes shake { 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+
+/* 이전 단계 글 참고 상자 */
+.ref {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-left: 3px solid var(--paper-line);
+  background: rgba(230, 220, 198, 0.25);
+}
+.ref span { font-size: 11px; color: var(--muted); }
+.ref p { margin: 4px 0 0; font-size: 14px; line-height: 1.6; max-height: 120px; overflow-y: auto; }
+
+blockquote {
+  margin: 0;
+  padding: 14px 16px;
+  font-size: 16px;
+  line-height: 1.7;
+  background: #fff;
+  border-left: 4px solid var(--red);
+}
+
+details { margin: 14px 0 4px; }
+summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+
+.field { display: block; margin-bottom: 12px; }
+.field span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+
+/* 버튼 */
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+.actions.spread { justify-content: space-between; }
+.actions.spread > div { display: flex; gap: 8px; }
+.row-right { display: flex; justify-content: flex-end; margin-top: 8px; }
+
+button {
+  padding: 9px 16px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+button:disabled { opacity: 0.35; cursor: not-allowed; }
+button.small { padding: 5px 10px; font-size: 12px; }
+.primary { background: var(--ink); color: #fff; }
+.primary:hover:not(:disabled) { background: #3a2c22; }
+.ghost { background: transparent; color: var(--ink); border-color: var(--paper-line); }
+.ghost:hover:not(:disabled) { background: rgba(0,0,0,0.04); }
+.danger { background: var(--red); color: #fff; }
+.danger:hover { background: #a30c19; }
+.danger-text { color: var(--red); }
+.green-btn { background: var(--green); color: #fff; }
+.green-btn:hover { background: #0f5209; }
+
+/* 忍 따라 쓰기 판 */
+.pad-wrap { display: flex; justify-content: center; margin: 4px 0 12px; }
+#trace-holder canvas {
+  display: block;
+  cursor: crosshair;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+}
+.meter { height: 6px; background: var(--paper-line); border-radius: 3px; overflow: hidden; }
+.meter .bar { width: 0; height: 100%; background: #b8a98c; transition: width 0.2s; }
+.meter .bar.ok { background: var(--red); }
+.meter-text { min-height: 18px; margin: 8px 0 0; font-size: 13px; color: var(--red); text-align: center; }
+
+/* 기록 보기 머리 */
+.memo-head { display: flex; align-items: center; gap: 16px; }
+.big-hanja { font-size: 56px; font-weight: 900; line-height: 1; }
+.big-hanja.red, .chip.red { color: var(--red); }
+.big-hanja.green, .chip.green { color: var(--green); }
+.chip {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid currentColor;
+  border-radius: 20px;
+}
+
+/* 알림(복사했어요) */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 40px;
+  transform: translateX(-50%);
+  padding: 10px 20px;
+  background: rgba(28, 20, 14, 0.9);
+  color: #fff;
+  font-size: 14px;
+  border-radius: 20px;
+  z-index: 30;
+  transition: opacity 0.4s;
+}
+.toast.out { opacity: 0; }
+
+/* 창 안의 모든 스크롤바 숨기기 (글 상자, 참고 상자 포함). 스크롤은 마우스 휠로 그대로 된다 */
+#modal-root *, .confirm-layer * { scrollbar-width: none; }
+#modal-root *::-webkit-scrollbar, .confirm-layer *::-webkit-scrollbar { display: none; }

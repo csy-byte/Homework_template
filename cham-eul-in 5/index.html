@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>참을 인(忍)</title>
+
+  <!-- 글꼴: 본문용 Noto Serif KR (한자 忍 포함) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;700;900&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- 라이브러리: p5.js(그리기) + matter.js(왼쪽 두루마리 물리) -->
+  <script src="https://cdn.jsdelivr.net/npm/p5@2.3.4/lib/p5.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/matter-js@0.20.0/build/matter.min.js"></script>
+</head>
+<body>
+  <!-- p5 캔버스는 setup()에서 여기에 자동으로 붙는다 -->
+  <main id="stage"></main>
+
+  <!-- HTML 창(모달)들이 들어가는 자리. ui.js가 내용을 채운다 -->
+  <div id="modal-root" class="hidden"></div>
+
+  <!-- ui.js(글쓰기 창)를 먼저, sketch.js(메인 화면)를 나중에 불러온다 -->
+  <script src="ui.js"></script>
+  <script src="sketch.js"></script>
+</body>
+</html>
