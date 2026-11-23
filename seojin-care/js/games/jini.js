@@ -218,9 +218,46 @@ const JiniGame = {
       function updateHint() {
         if (!running) return setHint("");
         if (mode === "touch") return setHint("카메라 없음 · 지니를 직접 눌러서 잡기");
-        if (p.millis() - hands.seenAt > 900 && !armed) return setHint("손이 안 보여요 · 한 걸음 뒤로!");
+        if (p.millis() - hands.seenAt > 900 && !armed) {
+          // 왜 안 되는지 구체적으로 알려 주기
+          if (!Cam.poseFresh) return setHint("동작 인식 준비 중…");
+          if (!Cam.hasPose) return setHint("몸이 안 보여요 · 한 걸음 뒤로!");
+          return setHint("손목이 화면 밖이에요 · 손을 화면 안에 보이게!");
+        }
         if (armed) return setHint("지금! 지니 위에서 두 손을 모아요 👏");
         setHint("팔을 쫙 벌려요");
+      }
+
+      // ---------- 뼈대 보기 (인식이 잘 되는지 확인용) ----------
+      // 점이 진할수록 모델이 확신하는 관절. 손목은 크게 표시
+      const BONES = [
+        ["left_shoulder", "right_shoulder"], ["left_shoulder", "left_elbow"], ["left_elbow", "left_wrist"],
+        ["right_shoulder", "right_elbow"], ["right_elbow", "right_wrist"],
+        ["left_shoulder", "left_hip"], ["right_shoulder", "right_hip"], ["left_hip", "right_hip"],
+      ];
+      function drawSkeleton(vr) {
+        if (!C.SHOW_SKELETON || !Cam.poseFresh) return;
+        const kps = Cam.keypoints;
+        const byName = {};
+        for (const k of kps) byName[k.name] = k;
+        const conf = (k) => (k.confidence != null ? k.confidence : k.score) || 0;
+        p.strokeWeight(3 * u);
+        for (const [a, b] of BONES) {
+          const A = byName[a], B = byName[b];
+          if (!A || !B || conf(A) < 0.15 || conf(B) < 0.15) continue;
+          const pa = toCanvas(A, vr), pb = toCanvas(B, vr);
+          p.stroke(255, 255, 255, 200 * Math.min(conf(A), conf(B)) + 55);
+          p.line(pa.x, pa.y, pb.x, pb.y);
+        }
+        p.noStroke();
+        for (const k of kps) {
+          const c = conf(k);
+          if (c < 0.15) continue;
+          const pt = toCanvas(k, vr);
+          const wrist = k.name.endsWith("wrist");
+          p.fill(wrist ? 255 : 53, wrist ? 162 : 5, wrist ? 105 : 5, 255 * c);
+          p.circle(pt.x, pt.y, (wrist ? 14 : 8) * u);
+        }
       }
 
       // ---------- 그리기 ----------
@@ -369,7 +406,7 @@ const JiniGame = {
 
         p.background("#fff7e2");
         let vr = null;
-        if (camOn) { vr = videoRect(); drawVideo(vr); }
+        if (camOn) { Cam.syncSize(); vr = videoRect(); drawVideo(vr); drawSkeleton(vr); }
         if (running && camOn) readHands(vr);
         if (running) moveJini(dt);
         updateHint();

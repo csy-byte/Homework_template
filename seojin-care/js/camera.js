@@ -61,6 +61,10 @@ const Cam = (() => {
       video.setAttribute("playsinline", ""); // iPhone: 전체화면으로 튀어나가지 않게
       video.muted = true;
       video.autoplay = true;
+      // iPhone Safari: 페이지에 안 붙은 video는 프레임이 안 넘어가서 인식이 멈춰요
+      // → 화면에 안 보이게 붙여 둠
+      video.style.cssText = "position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none;z-index:-1";
+      document.body.appendChild(video);
     }
     video.srcObject = stream;
     try { await video.play(); } catch (e) { /* 자동재생 막힘 → 다음 프레임에 다시 */ }
@@ -117,6 +121,13 @@ const Cam = (() => {
     if (video) video.srcObject = null;
   }
 
+  // 폰을 돌리면 영상 크기(가로↔세로)가 바뀌어요 → 모델이 쓰는 크기도 맞춰 주기
+  function syncSize() {
+    if (!video || !video.videoWidth) return;
+    if (video.width !== video.videoWidth) video.width = video.videoWidth;
+    if (video.height !== video.videoHeight) video.height = video.videoHeight;
+  }
+
   // 관절 하나 꺼내기 — 확신도(confidence)가 낮으면 null
   // 좌표는 '카메라 영상' 기준 픽셀 (거울 반전 전)
   function point(name, minConfidence = 0.3) {
@@ -135,6 +146,9 @@ const Cam = (() => {
     stopDetect,
     stop,
     point,
+    syncSize,
+    get keypoints() { return pose && pose.keypoints ? pose.keypoints : []; },
+    get hasPose() { return !!pose; },
     get video() { return video; },
     get lastResult() { return lastResult; },
     // 카메라도 켜졌고 모델도 준비됨
