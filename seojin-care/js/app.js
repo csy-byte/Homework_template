@@ -351,6 +351,7 @@ const App = (() => {
       ${!role || conflict ? `<div class="role-row" style="margin-bottom:8px">${Net.ROLES.map((r) =>
         `<button class="role-btn" data-pick="${r}" type="button" ${Net.roleTakenByOther(r) ? "disabled" : ""}>${pawSVG(PL[r].color)}<span>${nameOf(r)}</span></button>`).join("")}</div>` : ""}
       <button class="btn btn-ghost" data-sheet="practice" type="button">거품내기 혼자 연습</button>
+      <button class="btn btn-ghost" data-sheet="practice-jini" type="button">지니 잡기 혼자 연습</button>
       <button class="btn btn-link" data-sheet="leave" type="button">방 / 사람 바꾸기</button>
       <button class="btn btn-main" data-sheet="close" type="button">닫기</button>`);
     $("#sheet").onclick = (e) => {
@@ -363,7 +364,8 @@ const App = (() => {
       const act = e.target.closest("[data-sheet]")?.dataset.sheet;
       if (act === "close") closeSheet();
       if (act === "leave") Net.leaveRoom();
-      if (act === "practice") { closeSheet(); startPractice(); }
+      if (act === "practice") { closeSheet(); startPractice("bubble"); }
+      if (act === "practice-jini") { closeSheet(); startPractice("jini"); }
     };
   }
 
@@ -463,6 +465,7 @@ const App = (() => {
     if (duel.round && !duel.practice) duel.doneRounds.add(duel.round);
     clearTimers();
     destroyGame();
+    Cam.stop(); // 카메라 불 끄기
     duel.round = null;
     duel.phase = null;
     duel.practice = false;
@@ -532,10 +535,22 @@ const App = (() => {
     $("#intro-ready").textContent = practice ? "시작" : "준비 완료";
     $("#intro-ready").disabled = false;
     $("#intro-cancel").textContent = practice ? "그만하기" : "결투 취소";
-    const S = sensorHint();
-    $("#intro-sensor").textContent = S;
+    $("#intro-sensor").textContent = inputHint(def);
+    // 카메라 게임이면 무거운 ml5를 미리 불러 두기 (준비 버튼 누를 때 덜 기다리게)
+    if (def.input === "camera") Cam.loadModel().catch(() => {});
     if (practice) $("#intro-vs").innerHTML = "";
     else renderVs();
+  }
+
+  function inputHint(def) {
+    if (def && def.input === "camera") {
+      const touch = CONFIG.JINI.ALLOW_TOUCH_FALLBACK ? " → 지니를 손가락으로 눌러서 잡아요" : "";
+      if (!window.isSecureContext) return "⚠️ https 주소가 아니라 카메라를 못 써요" + touch;
+      if (!Cam.hasCamera) return "이 기기에는 카메라가 없어요" + touch;
+      if (Cam.ready) return "카메라 준비 완료 👌";
+      return "준비 버튼을 누르면 카메라 허용을 물어봐요. 허용을 눌러 주세요!";
+    }
+    return sensorHint();
   }
 
   function sensorHint() {
@@ -563,6 +578,19 @@ const App = (() => {
   async function onReadyClick() {
     const btn = $("#intro-ready");
     btn.disabled = true;
+    const def = duel.gameDef;
+
+    if (def && def.input === "camera") {
+      const ok = await prepareCamera(btn);
+      if (!ok) return;
+      // 모델 불러오는 사이에 결투가 취소됐으면 멈춤
+      if (!duel.practice && duel.phase !== "intro") return;
+      if (duel.practice) return runCountdown();
+      Net.ready();
+      renderVs();
+      return;
+    }
+
     // ⚠️ iPhone: 버튼을 누른 바로 이 순간에 센서 권한을 물어봐야 해요
     const res = await Motion.request();
     const fallback = CONFIG.BUBBLE.ALLOW_TOUCH_FALLBACK;
@@ -582,6 +610,34 @@ const App = (() => {
     renderVs();
   }
 
+  // 카메라 켜기 + 동작 인식 모델 준비. 진행해도 되면 true
+  async function prepareCamera(btn) {
+    const note = $("#intro-sensor");
+    const fallback = CONFIG.JINI.ALLOW_TOUCH_FALLBACK;
+    const label = btn.textContent;
+    const res = await Cam.request(); // ⚠️ 버튼 누른 순간에 요청해야 허용 팝업이 떠요
+    if (res !== "granted") {
+      note.textContent = res === "denied" ? "카메라가 거부됐어요. " : "이 기기/주소에선 카메라를 못 써요. ";
+      if (!fallback) { btn.disabled = false; return false; }
+      note.textContent += "지니를 손가락으로 눌러서 잡을게요.";
+      return true;
+    }
+    btn.textContent = "동작 인식 불러오는 중…";
+    note.textContent = "처음엔 10초 정도 걸릴 수 있어요";
+    try {
+      await Cam.loadModel();
+      Cam.startDetect(); // 미리 돌려 두면 게임 시작하자마자 인식돼요
+      note.textContent = "카메라 준비 완료 👌 폰을 세워 두고 상체가 다 보이게 한 걸음 뒤로!";
+      btn.textContent = label;
+      return true;
+    } catch (err) {
+      btn.textContent = label;
+      note.textContent = "동작 인식을 못 불러왔어요 (인터넷 연결 확인). " + (fallback ? "손가락으로 눌러서 잡을게요." : "다시 눌러 주세요.");
+      if (!fallback) { btn.disabled = false; return false; }
+      return true;
+    }
+  }
+
   function onCancelClick() {
     if (duel.practice) return leaveDuel();
     Net.cancel();
@@ -592,6 +648,7 @@ const App = (() => {
   // ---------- 카운트다운 ----------
   function runCountdown() {
     showPanel("countdown");
+    $(".countdown-sub").textContent = (duel.gameDef && duel.gameDef.countdownSub) || "폰을 꽉 쥐세요!";
     const el = $("#countdown-num");
     const step = CONFIG.COUNTDOWN_MS / 4;
     ["3", "2", "1", "시작!"].forEach((txt, i) => {
@@ -617,6 +674,8 @@ const App = (() => {
     $("#hud-title").textContent = def.name;
     $("#hud-sub").textContent = def.sub || def.how;
     $("#hud-mode").hidden = true;
+    $("#judging p").textContent = def.judging || "거품 세는 중…";
+    const cam = def.input === "camera";
 
     const mod = def.module ? def.module() : null;
     if (!mod) { toast("아직 준비 중인 게임이에요"); return; }
@@ -628,6 +687,11 @@ const App = (() => {
         $("#hud-mode").hidden = m !== "touch";
         $("#hud-mode").textContent = "센서 신호 없음 · 화면을 문질러서 거품 만들기";
       },
+      onHint: (t) => {
+        $("#hud-mode").hidden = !t;
+        $("#hud-mode").textContent = t;
+      },
+      color: PL[Net.myRole() || "seoyoung"].color,
     });
 
     // 새로고침 후 이어 하기: 저장된 점수부터 시작
@@ -640,7 +704,11 @@ const App = (() => {
     duel.game.start();
 
     // iPhone에서 새로고침했다면 센서를 다시 허락받아야 해요 → 화면 탭 요청
-    const needTap = Motion.needsPermission && !Motion.granted && window.isSecureContext;
+    // (카메라 게임도 새로고침하면 카메라를 다시 켜야 해요)
+    const needTap = cam
+      ? Cam.hasCamera && window.isSecureContext && Cam.lastResult === null
+      : Motion.needsPermission && !Motion.granted && window.isSecureContext;
+    $("#sensor-resume").textContent = cam ? "화면을 눌러 카메라 다시 켜기" : "화면을 눌러 센서 다시 켜기";
     $("#sensor-resume").hidden = !needTap;
 
     renderHudScores();
@@ -702,18 +770,20 @@ const App = (() => {
     showPanel("result");
 
     if (!r.tie) Store.applyDuelResult(r.roundId, r.taskId, r.loser);
+    const gdef = gameById(r.gameId) || {};
+    const unit = gdef.unit || "개";
 
     const max = Math.max(r.scores.seoyoung, r.scores.seoin, 1);
     $("#result-scores").innerHTML = Net.ROLES.map((k) => `
       <div class="result-row"><span>${nameOf(k)}</span>
       <div class="track"><i style="width:0;background:${PL[k].color}" data-w="${(r.scores[k] / max) * 100}"></i></div>
-      <span>${r.scores[k]}개</span></div>`).join("");
+      <span>${r.scores[k]}${unit}</span></div>`).join("");
     requestAnimationFrame(() => requestAnimationFrame(() => {
       $$("#result-scores i").forEach((i) => { i.style.width = i.dataset.w + "%"; });
     }));
 
     if (r.tie) {
-      $("#result-kicker").textContent = "거품 수가 똑같아요!";
+      $("#result-kicker").textContent = gdef.tieText || "점수가 똑같아요!";
       $("#result-paw").innerHTML = pawSVG("#bb9999", true);
       $("#result-name").textContent = "무승부";
       $("#result-name").style.color = "var(--ink)";
@@ -738,9 +808,10 @@ const App = (() => {
     const r = Net.myRole() || "seoyoung";
     $("#result-kicker").textContent = "연습 기록";
     $("#result-paw").innerHTML = pawSVG(PL[r].color);
-    $("#result-name").textContent = `거품 ${score}개`;
+    const def = duel.gameDef || {};
+    $("#result-name").textContent = `${def.scoreLabel || ""} ${score}${def.unit || "개"}`;
     $("#result-name").style.color = PL[r].color;
-    $("#result-line").textContent = "결투에서는 더 세게 흔들어 봐요!";
+    $("#result-line").textContent = def.practiceLine || "";
     $("#result-scores").innerHTML = "";
     $("#result-again").hidden = false;
   }
@@ -751,7 +822,7 @@ const App = (() => {
   }
 
   function onAgain() {
-    if (duel.practice) return startPractice();
+    if (duel.practice) return startPractice(duel.gameDef ? duel.gameDef.id : "bubble");
     // 무승부 → 같은 일로 다시 결투 신청
     const r = Net.game && (Net.game.result || Net.game.lastResult);
     Net.ack();
@@ -763,13 +834,13 @@ const App = (() => {
   }
 
   // ---------- 혼자 연습 (서버 없이) ----------
-  function startPractice() {
+  function startPractice(gameId = "bubble") {
     clearTimers();
     destroyGame();
     duel.practice = true;
     duel.round = "practice";
     duel.resultFor = null;
-    duel.gameDef = gameById("bubble");
+    duel.gameDef = gameById(gameId);
     showScreen("duel");
     $$("[data-fill=task]").forEach((el) => { el.textContent = "혼자 연습"; });
     showIntro(duel.gameDef, true);
@@ -777,8 +848,16 @@ const App = (() => {
 
   // ---------- iPhone 새로고침 후 센서 다시 켜기 ----------
   async function onSensorResume() {
-    const res = await Motion.request();
     $("#sensor-resume").hidden = true;
+    if (duel.gameDef && duel.gameDef.input === "camera") {
+      const res = await Cam.request();
+      if (res !== "granted") return toast("카메라를 못 켰어요 · 지니를 눌러서 잡아요");
+      toast("동작 인식 불러오는 중…");
+      try { await Cam.loadModel(); Cam.startDetect(); }
+      catch (e) { toast("동작 인식을 못 불러왔어요 · 지니를 눌러서 잡아요"); }
+      return;
+    }
+    const res = await Motion.request();
     if (res !== "granted") toast("센서를 못 켰어요 · 화면을 문질러서 계속해요");
   }
 
@@ -795,7 +874,8 @@ const App = (() => {
     $("#room-join").onclick = joinRoom;
     $("#room-input").addEventListener("keydown", (e) => { if (e.key === "Enter") joinRoom(); });
     $$(".role-btn").forEach((b) => { b.onclick = () => pickRole(b.dataset.role); });
-    $("#setup-practice").onclick = startPractice;
+    $("#setup-practice").onclick = () => startPractice("bubble");
+    $("#setup-practice-jini").onclick = () => startPractice("jini");
     $("#task-list").onclick = onTaskClick;
     $("#done-list").onclick = onTaskClick;
     $("#add-task").onclick = openAddSheet;
