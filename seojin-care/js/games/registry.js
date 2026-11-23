@@ -63,6 +63,23 @@ const GAMES = [
     module: () => JiniGame, // jini.js
   },
   {
+    id: "call",
+    name: "지니 부르기",
+    icon: "🎤",
+    how: "막대의 초록 칸에 맞춰 \"아이구 예뻐 우리 서진이~\"를 한 글자씩 노래해요",
+    win: "음을 더 정확하게 맞춘 사람이 승리",
+    sub: "음을 맞춰 서진이를 부르세요",
+    input: "mic",
+    unit: "점",
+    scoreLabel: "",
+    countdownSub: "목을 가다듬고… 아~",
+    judging: "노래 점수 매기는 중…",
+    tieText: "점수가 똑같아요!",
+    practiceLine: "초록 칸에 오래 머물수록 점수가 높아요. 지니 꼬리를 봐요!",
+    playable: true,
+    module: () => CallGame, // call.js
+  },
+  {
     id: "hand",
     name: "손동작",
     icon: "✋",

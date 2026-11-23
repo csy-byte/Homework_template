@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <!-- 모바일에서 확대/축소 없이 화면 폭에 딱 맞게 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#fff7e2" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>최서진 돌보기</title>
+
+  <!-- 글꼴: 제목은 Black Han Sans, 본문은 Pretendard -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&display=swap" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ============ 연결 상태 띠 (끊겼을 때만 보임) ============ -->
+  <div id="net-banner" class="net-banner" hidden></div>
+
+  <!-- ============ 화면 1. 처음 설정 (방 코드 + 나는 누구?) ============ -->
+  <section id="screen-setup" class="screen" hidden>
+    <h1 class="app-title">최서진 돌보기</h1>
+    <div class="setup-card">
+      <p class="setup-step">1. 방 코드</p>
+      <p class="setup-help">서영과 서인이 <b>똑같은 코드</b>를 넣어야 같은 방에 들어가요.</p>
+      <div class="room-row">
+        <input id="room-input" class="text-input" maxlength="12" autocomplete="off"
+               autocapitalize="characters" placeholder="예: SEOJIN7" />
+        <button id="room-random" class="btn btn-ghost" type="button">랜덤</button>
+      </div>
+      <button id="room-join" class="btn btn-main" type="button">방 들어가기</button>
+    </div>
+
+    <div id="setup-role" class="setup-card" hidden>
+      <p class="setup-step">2. 나는 누구?</p>
+      <p class="setup-help">이 폰을 쓰는 사람을 골라 주세요. 다음부터는 자동으로 들어가요.</p>
+      <div class="role-row">
+        <button class="role-btn" data-role="seoyoung" type="button"></button>
+        <button class="role-btn" data-role="seoin" type="button"></button>
+      </div>
+      <p id="role-note" class="setup-note"></p>
+    </div>
+
+    <p id="setup-status" class="setup-status"></p>
+    <button id="setup-practice" class="btn btn-link" type="button">연결 없이 거품내기 연습하기</button>
+    <button id="setup-practice-jini" class="btn btn-link" type="button">연결 없이 지니 잡기 연습하기</button>
+  </section>
+
+  <!-- ============ 화면 2. 메인 (Figma: 시작화면 / 터치시) ============ -->
+  <section id="screen-main" class="screen" hidden>
+    <h1 class="app-title">최서진 돌보기</h1>
+
+    <!-- 주간 달력 -->
+    <div id="week" class="week"></div>
+
+    <!-- 사용자 영역: 이번 주에 더 많이 한 사람의 발바닥이 더 커져요 -->
+    <div id="players" class="players"></div>
+
+    <!-- 해야 할 일 -->
+    <div id="task-list" class="task-list"></div>
+
+    <!-- 할 일 추가 (+) -->
+    <button id="add-task" class="add-bar" type="button" aria-label="할 일 추가"><span>+</span></button>
+
+    <!-- 완료한 일 -->
+    <p id="done-label" class="done-label" hidden>다 했어요</p>
+    <div id="done-list" class="task-list done-list"></div>
+
+    <div class="bottom-space"></div>
+
+    <!-- 아래 고정 띠: 방 코드 / 누가 접속해 있는지 -->
+    <button id="room-bar" class="room-bar" type="button"></button>
+  </section>
+
+  <!-- ============ 화면 3. 결투 ============ -->
+  <section id="screen-duel" class="screen screen-duel" hidden>
+
+    <!-- 3-1 룰렛 -->
+    <div id="duel-roulette" class="duel-panel" hidden>
+      <p class="duel-task" data-fill="task"></p>
+      <h2 class="duel-heading">오늘의 대결은…</h2>
+      <div class="roulette-window"><div id="roulette-card" class="roulette-card"></div></div>
+    </div>
+
+    <!-- 3-2 게임 안내 + 준비 -->
+    <div id="duel-intro" class="duel-panel" hidden>
+      <p class="duel-task" data-fill="task"></p>
+      <div id="intro-icon" class="intro-icon"></div>
+      <h2 id="intro-name" class="duel-heading"></h2>
+      <div class="intro-box">
+        <p><b>조작</b> <span id="intro-how"></span></p>
+        <p><b>승리</b> <span id="intro-win"></span></p>
+        <p class="intro-lose">진 사람이 <span data-fill="task"></span> 담당!</p>
+      </div>
+      <div id="intro-vs" class="vs-row"></div>
+      <p id="intro-sensor" class="sensor-note"></p>
+      <button id="intro-ready" class="btn btn-main" type="button">준비 완료</button>
+      <button id="intro-cancel" class="btn btn-link" type="button">결투 취소</button>
+    </div>
+
+    <!-- 3-3 카운트다운 -->
+    <div id="duel-countdown" class="duel-panel" hidden>
+      <p class="countdown-num" id="countdown-num">3</p>
+      <p class="countdown-sub">폰을 꽉 쥐세요!</p>
+    </div>
+
+    <!-- 3-4 게임 (p5 캔버스가 이 안에 들어가요) -->
+    <div id="duel-play" class="duel-panel duel-play" hidden>
+      <div id="game-stage" class="game-stage"></div>
+      <div class="game-hud">
+        <h2 id="hud-title" class="hud-title">거품내기</h2>
+        <p id="hud-sub" class="hud-sub">핸드폰을 흔드세요</p>
+        <p id="hud-timer" class="hud-timer">20</p>
+        <div id="hud-scores" class="hud-scores"></div>
+        <p id="hud-mode" class="hud-mode" hidden></p>
+      </div>
+      <!-- 새로고침 후 iPhone 센서를 다시 켜야 할 때 -->
+      <button id="sensor-resume" class="sensor-resume" type="button" hidden>
+        화면을 눌러 센서 다시 켜기
+      </button>
+      <div id="judging" class="judging" hidden>
+        <p>거품 세는 중…</p>
+      </div>
+    </div>
+
+    <!-- 3-5 결과 -->
+    <div id="duel-result" class="duel-panel" hidden>
+      <p id="result-kicker" class="result-kicker">오늘의 희생양은…</p>
+      <div id="result-paw" class="result-paw"></div>
+      <h2 id="result-name" class="result-name"></h2>
+      <p id="result-line" class="result-line"></p>
+      <div id="result-scores" class="result-scores"></div>
+      <button id="result-ok" class="btn btn-main" type="button">확인</button>
+      <button id="result-again" class="btn btn-ghost" type="button" hidden>다시 한 판</button>
+    </div>
+  </section>
+
+  <!-- ============ 아래에서 올라오는 시트 (할 일 추가 / 방 설정) ============ -->
+  <div id="sheet-backdrop" class="sheet-backdrop" hidden></div>
+  <div id="sheet" class="sheet" hidden></div>
+
+  <!-- ============ 잠깐 뜨는 알림 ============ -->
+  <div id="toast" class="toast" hidden></div>
+
+  <!-- 라이브러리: p5.js(그림/애니메이션) → p5.party(멀티플레이) 순서로 불러와요 -->
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.11.13/lib/p5.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/p5.party@0.16.0/dist/p5.party.js"></script>
+
+  <!-- 우리 코드: 순서가 중요해요 (위에 있는 파일을 아래 파일이 사용) -->
+  <script src="js/config.js"></script>
+  <script src="js/icons.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/sensors.js"></script>
+  <script src="js/camera.js"></script>   <!-- 카메라 + ml5 (ml5는 지니 잡기 때만 불러와요) -->
+  <script src="js/games/registry.js"></script>
+  <script src="js/games/bubble.js"></script>
+  <script src="js/games/jini.js"></script>
+  <script src="js/network.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

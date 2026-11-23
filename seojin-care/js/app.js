@@ -352,6 +352,7 @@ const App = (() => {
         `<button class="role-btn" data-pick="${r}" type="button" ${Net.roleTakenByOther(r) ? "disabled" : ""}>${pawSVG(PL[r].color)}<span>${nameOf(r)}</span></button>`).join("")}</div>` : ""}
       <button class="btn btn-ghost" data-sheet="practice" type="button">거품내기 혼자 연습</button>
       <button class="btn btn-ghost" data-sheet="practice-jini" type="button">지니 잡기 혼자 연습</button>
+      <button class="btn btn-ghost" data-sheet="practice-call" type="button">지니 부르기 혼자 연습</button>
       <button class="btn btn-link" data-sheet="leave" type="button">방 / 사람 바꾸기</button>
       <button class="btn btn-main" data-sheet="close" type="button">닫기</button>`);
     $("#sheet").onclick = (e) => {
@@ -366,6 +367,7 @@ const App = (() => {
       if (act === "leave") Net.leaveRoom();
       if (act === "practice") { closeSheet(); startPractice("bubble"); }
       if (act === "practice-jini") { closeSheet(); startPractice("jini"); }
+      if (act === "practice-call") { closeSheet(); startPractice("call"); }
     };
   }
 
@@ -466,6 +468,7 @@ const App = (() => {
     clearTimers();
     destroyGame();
     Cam.stop(); // 카메라 불 끄기
+    Mic.stop(); // 마이크 끄기
     duel.round = null;
     duel.phase = null;
     duel.practice = false;
@@ -543,6 +546,13 @@ const App = (() => {
   }
 
   function inputHint(def) {
+    if (def && def.input === "mic") {
+      const touch = CONFIG.CALL.ALLOW_TOUCH_FALLBACK ? " → 화면을 위아래로 문질러 음 높이를 대신해요" : "";
+      if (!window.isSecureContext) return "⚠️ https 주소가 아니라 마이크를 못 써요" + touch;
+      if (!Mic.hasMic) return "이 기기에는 마이크가 없어요" + touch;
+      if (Mic.ready) return "마이크 준비 완료 👌";
+      return "준비 버튼을 누르면 마이크 허용을 물어봐요. 허용을 눌러 주세요!";
+    }
     if (def && def.input === "camera") {
       const touch = CONFIG.JINI.ALLOW_TOUCH_FALLBACK ? " → 지니를 손가락으로 눌러서 잡아요" : "";
       if (!window.isSecureContext) return "⚠️ https 주소가 아니라 카메라를 못 써요" + touch;
@@ -579,6 +589,24 @@ const App = (() => {
     const btn = $("#intro-ready");
     btn.disabled = true;
     const def = duel.gameDef;
+
+    if (def && def.input === "mic") {
+      // ⚠️ 버튼 누른 바로 이 순간에 마이크를 요청해야 허용 팝업이 떠요
+      const res = await Mic.request();
+      const fallback = CONFIG.CALL.ALLOW_TOUCH_FALLBACK;
+      if (res !== "granted") {
+        $("#intro-sensor").textContent = (res === "denied" ? "마이크가 거부됐어요. " : "이 기기/주소에선 마이크를 못 써요. ")
+          + (fallback ? "화면을 위아래로 문질러서 할게요." : "다시 눌러 주세요.");
+        if (!fallback) { btn.disabled = false; return; }
+      } else {
+        $("#intro-sensor").textContent = "마이크 준비 완료 👌 조용한 곳에서 해요";
+      }
+      if (duel.practice) return runCountdown();
+      if (duel.phase !== "intro") return;
+      Net.ready();
+      renderVs();
+      return;
+    }
 
     if (def && def.input === "camera") {
       const ok = await prepareCamera(btn);
@@ -705,10 +733,13 @@ const App = (() => {
 
     // iPhone에서 새로고침했다면 센서를 다시 허락받아야 해요 → 화면 탭 요청
     // (카메라 게임도 새로고침하면 카메라를 다시 켜야 해요)
-    const needTap = cam
+    const mic = def.input === "mic";
+    const needTap = mic
+      ? Mic.hasMic && window.isSecureContext && (Mic.lastResult === null || (Mic.lastResult === "granted" && !Mic.ready))
+      : cam
       ? Cam.hasCamera && window.isSecureContext && Cam.lastResult === null
       : Motion.needsPermission && !Motion.granted && window.isSecureContext;
-    $("#sensor-resume").textContent = cam ? "화면을 눌러 카메라 다시 켜기" : "화면을 눌러 센서 다시 켜기";
+    $("#sensor-resume").textContent = mic ? "화면을 눌러 마이크 다시 켜기" : cam ? "화면을 눌러 카메라 다시 켜기" : "화면을 눌러 센서 다시 켜기";
     $("#sensor-resume").hidden = !needTap;
 
     renderHudScores();
@@ -849,6 +880,11 @@ const App = (() => {
   // ---------- iPhone 새로고침 후 센서 다시 켜기 ----------
   async function onSensorResume() {
     $("#sensor-resume").hidden = true;
+    if (duel.gameDef && duel.gameDef.input === "mic") {
+      const res = await Mic.request();
+      if (res !== "granted") toast("마이크를 못 켰어요 · 화면을 위아래로 문질러서 해요");
+      return;
+    }
     if (duel.gameDef && duel.gameDef.input === "camera") {
       const res = await Cam.request();
       if (res !== "granted") return toast("카메라를 못 켰어요 · 지니를 눌러서 잡아요");
@@ -876,6 +912,7 @@ const App = (() => {
     $$(".role-btn").forEach((b) => { b.onclick = () => pickRole(b.dataset.role); });
     $("#setup-practice").onclick = () => startPractice("bubble");
     $("#setup-practice-jini").onclick = () => startPractice("jini");
+    $("#setup-practice-call").onclick = () => startPractice("call");
     $("#task-list").onclick = onTaskClick;
     $("#done-list").onclick = onTaskClick;
     $("#add-task").onclick = openAddSheet;
