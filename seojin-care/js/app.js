@@ -810,6 +810,15 @@ const App = (() => {
 
     Net.onChange(onNetChange);
 
+    // 돌봄 기록이 바뀌면(상대 폰에서 체크/취소/추가) 화면 다시 그리기
+    Store.onChange((added) => {
+      renderMain();
+      // 방금(2분 안) 상대 폰에서 체크한 게 있으면 알림
+      const r = added[added.length - 1];
+      const t = r && Store.task(r.taskId);
+      if (t && Date.now() - r.at < 120000 && screen === "main") toast(`${Net.iga(r.by)} ${t.title} 완료!`);
+    });
+
     // 날짜가 바뀌거나 '며칠 전' 글자가 바뀌도록 1분마다 다시 그리기
     setInterval(renderMain, 60000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) renderMain(); });

@@ -6,6 +6,8 @@
         → '호스트' 한 명만 씁니다. 두 폰이 동시에 쓰면 한쪽 글이 사라지기 때문.
      2) me    (내 폰 전용 메모: 역할, 준비, 점수 …)
         → 각자 자기 것만 씁니다. 호스트가 이걸 읽고 판단해요.
+     3) care_seoyoung / care_seoin  (돌봄 기록: 완료 체크, 담당자, 할 일 목록)
+        → 각자 자기 이름 공책에만 쓰고, 화면엔 두 공책을 합쳐서 보여줘요 (storage.js 참고)
 
    ■ 호스트란?
      방에 있는 기기 중 p5.party가 정해 주는 '반장' 1명.
@@ -117,6 +119,14 @@ const Net = (() => {
 
       me = await p5party.loadMyShared(init);
       guests = p5party.loadGuestShareds();
+
+      // 돌봄 기록 공유 — 사람마다 공책 1권씩 (자기 공책에만 써요. storage.js 설명 참고)
+      const books = {};
+      for (const r of ROLES) {
+        books[r] = await p5party.loadShared("care_" + r, Store.emptyBook());
+        p5party.watchShared(books[r], () => Store.pull()); // 상대가 체크하면 → 내 화면 갱신
+      }
+      Store.attach(books);
     })();
 
     let timer;

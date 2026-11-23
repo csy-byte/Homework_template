@@ -1,16 +1,43 @@
 /* =========================================================
-   storage.js — 돌봄 기록을 이 폰(브라우저)에 저장해요 (localStorage)
+   storage.js — 돌봄 기록 (두 폰이 같이 보는 공유 기록)
    ---------------------------------------------------------
-   저장하는 것
-   - tasks        : 돌봄 목록
-   - log          : 누가 언제 했는지 (완료 기록)
-   - assignments  : 결투로 정해진 담당자
-   - appliedRounds: 이미 반영한 결투 번호 (새로고침해도 두 번 저장 안 되게)
+   ■ 핵심 아이디어: "각자 자기 공책에만 쓰고, 읽을 땐 두 공책을 합쳐 본다"
+     p5.party 서버에 공책(공유 데이터)이 2권 있어요.
+       care_seoyoung : 서영 폰만 씀
+       care_seoin    : 서인 폰만 씀
+     두 폰이 같은 공책에 '동시에' 쓰면 서버가 한쪽을 버려요 (실제로 테스트해 보니 생김).
+     그래서 공책을 나눠서, 한 공책엔 한 폰만 쓰게 했어요 → 부딪힐 일이 없어요.
+
+   ■ 공책 안의 칸 (전부 '이름표 붙은 칸' = 객체)
+     tasks       : { 할일id: 할일 }            할 일 목록 (삭제 = removed: true)
+     log         : { 기록id: 완료기록 | null }  누가 언제 했는지 (취소 = null)
+     assignments : { 할일id: 담당 | null }      결투로 정해진 담당자
+     applied     : { "r"+결투번호: true }       이미 반영한 결투
+     각 칸에는 { v: 값, ts: 쓴 시각 } 이 들어가요.
+
+   ■ 합치는 규칙
+     같은 칸이 두 공책에 다 있으면 → ts(시각)가 더 늦은 쪽이 이겨요.
+     예) 서영이 아침밥 체크(서영 공책) → 서인이 그걸 취소(서인 공책에 null, 더 늦은 시각)
+         → 합치면 '취소됨'.
+
+   ■ 이 폰의 localStorage에도 두 공책 복사본을 저장해요
+     - 서버 연결 전/실패해도 앱이 열리고 체크할 수 있어요 (연결되면 그때 보내져요)
+     - 데모 서버가 재시작돼서 방이 비어도 복사본으로 다시 채워요
    ========================================================= */
 
 const Store = (() => {
-  const KEY = "seojin_care_v1";
+  const KEY = "seojin_care_v3";
+  const OLD_KEY = "seojin_care_v1";      // 예전(공유 전) 저장 데이터 → 자동으로 옮겨요
+  const ROLES = ["seoyoung", "seoin"];
+  const SECTIONS = ["tasks", "log", "assignments", "applied"];
   const DAY = 24 * 60 * 60 * 1000;
+
+  // ---- 작은 도우미 ----
+  const plain = (o) => JSON.parse(JSON.stringify(o ?? null)); // 공유 객체 → 일반 객체 (undefined 정리)
+  // 고유 이름: 글자로 시작 (서버 경로에서 숫자로 시작하는 이름은 헷갈릴 수 있어요)
+  const newId = (prefix) => prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const emptyBook = () => ({ tasks: {}, log: {}, assignments: {}, applied: {} });
+  const isEntry = (e) => !!e && typeof e === "object" && typeof e.ts === "number";
 
   // ---- 날짜 도우미 ----
   function dateKey(d = new Date()) {
@@ -30,32 +57,179 @@ const Store = (() => {
     return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
   }
 
-  // ---- 불러오기 / 저장 ----
+  // ---- 내 역할 (= 내가 쓸 공책) ----
+  function myRole() {
+    const r = (typeof Net !== "undefined" && Net.myRole()) || localStorage.getItem("seojin_role");
+    return ROLES.includes(r) ? r : "seoyoung";
+  }
+
+  // ======================================================
+  //  불러오기 (이 폰의 복사본)
+  // ======================================================
   function load() {
     try {
       const saved = JSON.parse(localStorage.getItem(KEY));
-      if (saved && Array.isArray(saved.tasks)) return saved;
-    } catch (e) { /* 저장된 게 깨졌으면 새로 시작 */ }
-    return {
-      tasks: CONFIG.DEFAULT_TASKS.map((t) => ({ ...t })),
-      log: [],
-      assignments: {},
-      appliedRounds: [],
-    };
-  }
-  let data = load();
-  function save() {
-    try { localStorage.setItem(KEY, JSON.stringify(data)); } catch (e) { /* 저장 공간 부족 등 */ }
+      if (saved && saved.v === 3 && saved.books) {
+        for (const r of ROLES) {
+          saved.books[r] = { ...emptyBook(), ...(saved.books[r] || {}) };
+        }
+        return saved;
+      }
+    } catch (e) { /* 깨졌으면 새로 */ }
+
+    const d = { v: 3, books: { seoyoung: emptyBook(), seoin: emptyBook() } };
+    // 예전 데이터(공유 전)가 있으면 이 폰 주인의 공책으로 옮겨요
+    try {
+      const old = JSON.parse(localStorage.getItem(OLD_KEY));
+      if (old && Array.isArray(old.tasks)) {
+        const b = d.books[myRole()];
+        old.tasks.forEach((t, i) => {
+          if (t.custom) b.tasks[t.id] = { v: plain({ ...t, order: i, removed: false }), ts: 1 };
+        });
+        (old.log || []).forEach((r) => { b.log[newId("e")] = { v: plain(r), ts: r.at || 1 }; });
+        for (const [k, a] of Object.entries(old.assignments || {})) b.assignments[k] = { v: plain(a), ts: 1 };
+        (old.appliedRounds || []).forEach((r) => { b.applied["r" + r] = { v: true, ts: 1 }; });
+      }
+    } catch (e) { /* 무시 */ }
+    return d;
   }
 
-  // ---- 조회 ----
-  function tasks() { return data.tasks; }
-  function task(id) { return data.tasks.find((t) => t.id === id); }
+  let local = load();      // { v, books: { seoyoung: 공책, seoin: 공책 } }
+  let records = null;      // 방에 연결되면 { seoyoung: 공유객체, seoin: 공유객체 }
+  let data = null;         // 두 공책을 합친 결과 (화면은 이것만 봐요)
+  let taskList = [];       // 순서대로, 삭제된 것 빼고
+  let logList = [];        // 시간 순서대로, 취소된 것 빼고
+  const listeners = new Set();
+
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(local)); } catch (e) { /* 저장 공간 부족 등 */ }
+  }
+
+  // 두 공책 합치기 → data, taskList, logList
+  function rebuild() {
+    // 기본 할 일(config.js)부터 깔고 (ts 0 = 누가 뭘 쓰면 그게 이김)
+    const merged = emptyBook();
+    const stamp = emptyBook();
+    CONFIG.DEFAULT_TASKS.forEach((t, i) => {
+      merged.tasks[t.id] = plain({ ...t, order: i, removed: false });
+      stamp.tasks[t.id] = 0;
+    });
+    for (const r of ROLES) {
+      const book = local.books[r];
+      for (const s of SECTIONS) {
+        for (const [k, e] of Object.entries(book[s] || {})) {
+          if (!isEntry(e)) continue;
+          if (!(k in stamp[s]) || e.ts > stamp[s][k]) {
+            merged[s][k] = e.v;
+            stamp[s][k] = e.ts;
+          }
+        }
+      }
+    }
+    data = merged;
+    data.stamp = stamp;
+    taskList = Object.values(data.tasks)
+      .filter((t) => t && !t.removed)
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
+    logList = Object.entries(data.log)
+      .filter(([, r]) => r)
+      .map(([id, r]) => ({ ...r, id }))
+      .sort((a, b) => a.at - b.at);
+  }
+  rebuild();
+  save();
+
+  // ======================================================
+  //  서버(p5.party)와 주고받기
+  // ======================================================
+
+  // network.js가 연결 직후 불러요
+  function attach(recs) {
+    records = recs;
+    sync(false);
+    setInterval(() => sync(false), 3000); // 역할을 바꿨거나 보내다 끊긴 게 있으면 다시 보내기
+  }
+
+  // 1) 서버 공책 → 내 복사본 (더 새로운 칸만)
+  // 2) 내 공책 복사본 → 서버 (서버보다 새로운 칸만) — 내 공책에만 써요!
+  function sync(fromServer) {
+    if (!records) return;
+    const before = new Set(logList.map((r) => r.id));
+    let changed = false;
+
+    for (const r of ROLES) {
+      const rec = records[r];
+      if (!rec) continue;
+      const book = local.books[r];
+      for (const s of SECTIONS) {
+        for (const [k, e] of Object.entries(rec[s] || {})) {
+          if (!isEntry(e)) continue;
+          if (!isEntry(book[s][k]) || e.ts > book[s][k].ts) { book[s][k] = plain(e); changed = true; }
+        }
+      }
+    }
+
+    // 내 공책 올리기
+    const role = myRole();
+    const rec = records[role];
+    if (rec) {
+      const book = local.books[role];
+      const serverEmpty = SECTIONS.every((s) => !rec[s] || Object.keys(rec[s]).length === 0);
+      if (serverEmpty) {
+        // 방이 비어 있음 (처음이거나 서버 재시작) → 한 번에 통째로
+        p5party.setShared(rec, plain(book));
+      } else {
+        for (const s of SECTIONS) {
+          if (!rec[s] || typeof rec[s] !== "object") rec[s] = {};
+          for (const [k, e] of Object.entries(book[s])) {
+            const cur = rec[s][k];
+            if (!isEntry(cur) || cur.ts < e.ts) rec[s][k] = plain(e);
+          }
+        }
+      }
+    }
+
+    if (!changed) return;
+    rebuild();
+    save();
+    // 새로 생긴 완료 기록 = 다른 폰에서 체크한 것 → 화면에 알려주기
+    const added = fromServer ? logList.filter((r) => !before.has(r.id)) : [];
+    listeners.forEach((fn) => fn(added));
+  }
+
+  // 서버 공책이 한 번에 여러 칸 바뀌어도 한 번만 처리하도록 살짝 모아서
+  let pullTimer = null;
+  function pull() {
+    if (pullTimer) return;
+    pullTimer = setTimeout(() => { pullTimer = null; sync(true); }, 30);
+  }
+
+  // 모든 변경은 여기를 지나가요: 내 공책에 쓰기 → 내 화면 바로 반영 → 서버로
+  function write(section, key, value) {
+    const role = myRole();
+    // 지금 보이는 값보다 꼭 늦은 시각으로 (폰 시계가 조금 달라도 '취소'가 확실히 이기게)
+    const ts = Math.max(Date.now(), (data.stamp[section][key] || 0) + 1);
+    const e = { v: plain(value), ts };
+    local.books[role][section][key] = e;
+    rebuild();
+    save();
+    const rec = records && records[role];
+    if (rec) {
+      if (!rec[section] || typeof rec[section] !== "object") rec[section] = {};
+      rec[section][key] = plain(e);
+    }
+  }
+
+  // ======================================================
+  //  조회
+  // ======================================================
+  function tasks() { return taskList; }
+  function task(id) { return taskList.find((t) => t.id === id); }
 
   // 이 일의 마지막 완료 기록
   function lastDone(taskId) {
-    for (let i = data.log.length - 1; i >= 0; i--) {
-      if (data.log[i].taskId === taskId) return data.log[i];
+    for (let i = logList.length - 1; i >= 0; i--) {
+      if (logList[i].taskId === taskId) return logList[i];
     }
     return null;
   }
@@ -98,7 +272,7 @@ const Store = (() => {
 
   // 최근 3번 누가 했는지 (발바닥 3개)
   function history(taskId, n = 3) {
-    return data.log.filter((r) => r.taskId === taskId).slice(-n).map((r) => r.by);
+    return logList.filter((r) => r.taskId === taskId).slice(-n).map((r) => r.by);
   }
 
   // 결투로 정해진 담당자 (아직 유효한 것만)
@@ -116,7 +290,7 @@ const Store = (() => {
   // 최근 7일 동안 각자 몇 번 했는지
   function weekCounts(now = Date.now()) {
     const counts = { seoyoung: 0, seoin: 0 };
-    for (const r of data.log) {
+    for (const r of logList) {
       if (daysBetween(r.at, now) < 7 && counts[r.by] !== undefined) counts[r.by]++;
     }
     return counts;
@@ -125,56 +299,59 @@ const Store = (() => {
   // 어떤 날짜에 매일 할 일을 얼마나 끝냈는지 (0~1)
   function dayProgress(d) {
     const key = dateKey(d);
-    const daily = data.tasks.filter((t) => t.type === "daily");
+    const daily = taskList.filter((t) => t.type === "daily");
     if (!daily.length) return 0;
-    const done = daily.filter((t) => data.log.some((r) => r.taskId === t.id && r.dateKey === key));
+    const done = daily.filter((t) => logList.some((r) => r.taskId === t.id && r.dateKey === key));
     return done.length / daily.length;
   }
 
-  // ---- 변경 ----
+  // ======================================================
+  //  변경 (전부 write()를 통해서 → 상대 폰에도 반영)
+  // ======================================================
   function complete(taskId, by) {
     const now = Date.now();
-    data.log.push({ taskId, by, at: now, dateKey: dateKey(new Date(now)) });
-    if (data.log.length > 1500) data.log = data.log.slice(-1000); // 너무 길어지지 않게
-    delete data.assignments[taskId];
-    save();
+    write("log", newId("e"), { taskId, by, at: now, dateKey: dateKey(new Date(now)) });
+    if (data.assignments[taskId]) write("assignments", taskId, null);
   }
 
-  // 완료 취소 (가장 최근 기록 1개 지우기)
+  // 완료 취소 (가장 최근 기록 1개를 null로) — 상대가 체크한 것도 취소할 수 있어요
   function undo(taskId) {
-    for (let i = data.log.length - 1; i >= 0; i--) {
-      if (data.log[i].taskId === taskId) { data.log.splice(i, 1); break; }
-    }
-    save();
+    const last = lastDone(taskId);
+    if (last) write("log", last.id, null);
   }
 
   // 결투 결과 반영 — 같은 결투(roundId)는 한 번만
+  // 두 폰이 둘 다 불러도 같은 내용이라 괜찮아요
   function applyDuelResult(roundId, taskId, loser) {
-    if (!roundId || data.appliedRounds.includes(roundId)) return false;
-    data.appliedRounds.push(roundId);
-    data.appliedRounds = data.appliedRounds.slice(-50);
-    if (task(taskId)) {
-      data.assignments[taskId] = { by: loser, dateKey: dateKey(), roundId };
-    }
-    save();
+    const key = "r" + roundId;
+    if (!roundId || data.applied[key]) return false;
+    write("applied", key, true);
+    if (task(taskId)) write("assignments", taskId, { by: loser, dateKey: dateKey(), roundId });
     return true;
   }
 
   function addTask(title, type, everyDays) {
-    const id = "custom_" + Date.now().toString(36);
-    data.tasks.push({ id, title, type, time: "", everyDays: type === "periodic" ? everyDays : undefined, custom: true });
-    save();
+    const id = newId("custom_");
+    write("tasks", id, {
+      id, title, type, time: "",
+      everyDays: type === "periodic" ? everyDays : null,
+      custom: true, order: Date.now(), removed: false,
+    });
     return id;
   }
 
   function removeTask(id) {
-    data.tasks = data.tasks.filter((t) => t.id !== id);
-    delete data.assignments[id];
-    save();
+    const t = data.tasks[id];
+    if (!t) return;
+    write("tasks", id, { ...t, removed: true });
+    if (data.assignments[id]) write("assignments", id, null);
   }
 
   return {
+    ROLES, SECTIONS, emptyBook,
     dateKey, tasks, task, isDone, subText, history, assignment, lastDone,
     weekCounts, dayProgress, complete, undo, applyDuelResult, addTask, removeTask,
+    attach, pull,
+    onChange(fn) { listeners.add(fn); },
   };
 })();
