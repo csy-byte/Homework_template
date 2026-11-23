@@ -236,7 +236,11 @@ const JiniGame = {
         ["left_shoulder", "left_hip"], ["right_shoulder", "right_hip"], ["left_hip", "right_hip"],
       ];
       function drawSkeleton(vr) {
-        if (!C.SHOW_SKELETON || !Cam.poseFresh) return;
+        if (!C.SHOW_SKELETON) return;
+        // 왼쪽 아래: 어떤 계산 장치로 인식 중인지 (문제 생기면 확인용)
+        p.noStroke(); p.fill(53, 5, 5, 160); p.textAlign(p.LEFT, p.BOTTOM); p.textSize(11 * u); p.textFont("Pretendard");
+        p.text(`인식: ${Cam.backend || "-"}${Cam.lastError ? " · 오류" : ""}`, 10 * u, p.height - 10 * u);
+        if (!Cam.poseFresh) return;
         const kps = Cam.keypoints;
         const byName = {};
         for (const k of kps) byName[k.name] = k;

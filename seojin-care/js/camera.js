@@ -81,13 +81,39 @@ const Cam = (() => {
     return (lastResult = "granted");
   }
 
+  // ---------- 계산 장치(백엔드) 고르기 ----------
+  // webgl = 그래픽칩(빠름). 그런데 일부 iPad는 그래픽칩 계산 정밀도가 낮아서 뼈대가 엉망으로 나와요
+  // → 그런 기기는 webgpu(최신 iPadOS) 또는 cpu(느리지만 정확)로 바꿔요
+  // 테스트용: 주소 뒤에 ?backend=cpu / ?backend=webgpu / ?backend=webgl 을 붙이면 강제로 바꿀 수 있어요
+  let backend = "";
+  async function pickBackend() {
+    const tf = ml5.tf;
+    const forced = new URLSearchParams(location.search).get("backend") || CONFIG.JINI.BACKEND;
+    const tryUse = async (name) => {
+      try { return (await tf.setBackend(name)) !== false && tf.getBackend() === name; }
+      catch (e) { return false; }
+    };
+    if (forced && forced !== "auto") {
+      if (await tryUse(forced)) return (backend = forced);
+    }
+    if (await tryUse("webgl")) {
+      // 그래픽칩이 정밀한 계산(32비트)을 못 하면 → 다른 장치로
+      const precise = tf.env().getBool("WEBGL_RENDER_FLOAT32_CAPABLE");
+      if (precise) return (backend = "webgl");
+      if (navigator.gpu && (await tryUse("webgpu"))) return (backend = "webgpu");
+    }
+    await tryUse("cpu");
+    return (backend = tf.getBackend());
+  }
+
   // 여러 번 불러도 한 번만 불러와요
   function loadModel() {
     if (!modelPromise) {
       modelPromise = (async () => {
         await loadScript(ML5_URL);
+        await pickBackend();
         // ⚠️ 페이지에 p5가 있으면 ml5.bodyPose()는 모델이 아니라 Promise(나중에 줄게)를 돌려줘요
-        //    → await로 진짜 모델을 받아야 detectStart를 쓸 수 있어요
+        //    → await로 진짜 모델을 받아야 해요
         bodyPose = await ml5.bodyPose("MoveNet", { modelType: "SINGLEPOSE_LIGHTNING" });
         await bodyPose.ready;
         modelLoaded = true;
@@ -99,23 +125,49 @@ const Cam = (() => {
     return modelPromise;
   }
 
-  function startDetect() {
-    if (detecting || !modelLoaded || !video || !stream) return;
-    try {
-      bodyPose.detectStart(video, (results) => {
-        pose = results && results[0] ? results[0] : null;
-        poseAt = performance.now();
-      });
-      detecting = true;
-    } catch (err) {
-      console.error("동작 인식 시작 실패:", err);
+  // ---------- 인식 반복 ----------
+  // 카메라 영상을 바로 모델에 넣지 않고, 작은 캔버스에 한 번 그린 다음 넣어요.
+  // iPad/iPhone Safari는 카메라 영상을 그래픽칩으로 바로 보내면 방향이 돌아가거나
+  // 크기가 틀리게 들어가는 버그가 있어서 → 캔버스에 그리면 화면에 보이는 그대로 들어가요.
+  const frame = document.createElement("canvas");
+  const fctx = frame.getContext("2d", { willReadFrequently: true });
+  const FRAME_MAX = 320; // 모델은 어차피 192px로 줄여서 봐요 → 작게 그려도 충분 + 빠름
+  let lastError = null;
+
+  async function loop() {
+    while (detecting) {
+      const vw = video.videoWidth, vh = video.videoHeight;
+      if (vw && vh && video.readyState >= 2) {
+        const k = Math.min(1, FRAME_MAX / Math.max(vw, vh));
+        const fw = Math.round(vw * k), fh = Math.round(vh * k);
+        if (frame.width !== fw || frame.height !== fh) { frame.width = fw; frame.height = fh; }
+        fctx.drawImage(video, 0, 0, fw, fh);
+        try {
+          const results = await bodyPose.detect(frame);
+          const p = results && results[0] ? results[0] : null;
+          // 캔버스 좌표 → 카메라 영상 좌표로 되돌리기
+          if (p && p.keypoints) for (const kp of p.keypoints) { kp.x /= k; kp.y /= k; }
+          pose = p;
+          poseAt = performance.now();
+          lastError = null;
+        } catch (err) {
+          lastError = err;
+          console.error("동작 인식 오류:", err);
+          await new Promise((r) => setTimeout(r, 300));
+        }
+      }
+      await new Promise((r) => requestAnimationFrame(r)); // 다음 화면까지 기다리기
     }
   }
 
+  function startDetect() {
+    if (detecting || !modelLoaded || !video || !stream) return;
+    detecting = true;
+    loop();
+  }
+
   function stopDetect() {
-    if (!detecting) return;
-    bodyPose.detectStop();
-    detecting = false;
+    detecting = false; // loop가 다음 바퀴에서 멈춰요
     pose = null;
   }
 
@@ -153,6 +205,8 @@ const Cam = (() => {
     stop,
     point,
     syncSize,
+    get backend() { return backend; },
+    get lastError() { return lastError; },
     get keypoints() { return pose && pose.keypoints ? pose.keypoints : []; },
     get hasPose() { return !!pose; },
     get video() { return video; },

@@ -55,7 +55,9 @@ const CONFIG = {
     CATCH_RADIUS: 1.5,     // 지니 크기의 몇 배 안에서 오므려야 잡히는지 (숫자↑ = 쉬워짐)
     COOLDOWN_MS: 350,      // 한 번 오므린 뒤 다음 시도까지 최소 간격
     MIN_CONFIDENCE: 0.2,   // 이보다 확신이 낮은 관절은 무시 (0~1, 숫자↓ = 흐릿해도 인정)
-    SHOW_SKELETON: true,   // 인식된 관절(뼈대)을 화면에 표시 — 잘 되면 false로 꺼도 돼요
+    SHOW_SKELETON: true,
+    // 동작 인식 계산 장치: "auto"(기기에 맞게 자동) / "webgl" / "webgpu" / "cpu"
+    BACKEND: "auto",   // 인식된 관절(뼈대)을 화면에 표시 — 잘 되면 false로 꺼도 돼요
     SIZE: 46,              // 지니 반지름 (412px 폭 기준)
     SPEED: 3.0,            // 처음 속도
     SPEED_UP: 0.35,        // 한 번 잡힐 때마다 빨라지는 정도
