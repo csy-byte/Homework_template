@@ -86,7 +86,9 @@ const Cam = (() => {
     if (!modelPromise) {
       modelPromise = (async () => {
         await loadScript(ML5_URL);
-        bodyPose = ml5.bodyPose("MoveNet", { modelType: "SINGLEPOSE_LIGHTNING" });
+        // ⚠️ 페이지에 p5가 있으면 ml5.bodyPose()는 모델이 아니라 Promise(나중에 줄게)를 돌려줘요
+        //    → await로 진짜 모델을 받아야 detectStart를 쓸 수 있어요
+        bodyPose = await ml5.bodyPose("MoveNet", { modelType: "SINGLEPOSE_LIGHTNING" });
         await bodyPose.ready;
         modelLoaded = true;
       })().catch((err) => {
@@ -99,11 +101,15 @@ const Cam = (() => {
 
   function startDetect() {
     if (detecting || !modelLoaded || !video || !stream) return;
-    detecting = true;
-    bodyPose.detectStart(video, (results) => {
-      pose = results && results[0] ? results[0] : null;
-      poseAt = performance.now();
-    });
+    try {
+      bodyPose.detectStart(video, (results) => {
+        pose = results && results[0] ? results[0] : null;
+        poseAt = performance.now();
+      });
+      detecting = true;
+    } catch (err) {
+      console.error("동작 인식 시작 실패:", err);
+    }
   }
 
   function stopDetect() {
