@@ -80,6 +80,25 @@ const GAMES = [
     module: () => CallGame, // call.js
   },
   {
+    id: "walk",
+    name: "서진이 산책시키기",
+    icon: "🐕",
+    how: "폰을 세워 두고 한 걸음 뒤로! 몸을 왼쪽·오른쪽으로 기울여 지니가 똥·쓰레기·치킨·덤불을 피하게 해요",
+    win: "제한 시간 동안 더 멀리 걸은 사람이 승리",
+    sub: "몸을 기울여 장애물을 피하세요",
+    input: "camera",
+    touchHint: "화면을 좌우로 밀어서 지니를 움직여요",
+    camReadyNote: "카메라 준비 완료 👌 폰을 세워 두고 허리까지 보이게 한 걸음 뒤로!",
+    unit: "m",
+    scoreLabel: "산책",
+    countdownSub: "허리까지 보이게 한 걸음 뒤로!",
+    judging: "산책 거리 재는 중…",
+    tieText: "걸은 거리가 똑같아요!",
+    practiceLine: "부딪히면 멈추고 속도도 처음으로! 치킨은 못 참으니 조심",
+    playable: true,
+    module: () => WalkGame, // walk.js
+  },
+  {
     id: "hand",
     name: "손동작",
     icon: "✋",

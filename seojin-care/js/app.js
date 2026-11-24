@@ -353,6 +353,7 @@ const App = (() => {
       <button class="btn btn-ghost" data-sheet="practice" type="button">거품내기 혼자 연습</button>
       <button class="btn btn-ghost" data-sheet="practice-jini" type="button">지니 잡기 혼자 연습</button>
       <button class="btn btn-ghost" data-sheet="practice-call" type="button">지니 부르기 혼자 연습</button>
+      <button class="btn btn-ghost" data-sheet="practice-walk" type="button">서진이 산책시키기 혼자 연습</button>
       <button class="btn btn-link" data-sheet="leave" type="button">방 / 사람 바꾸기</button>
       <button class="btn btn-main" data-sheet="close" type="button">닫기</button>`);
     $("#sheet").onclick = (e) => {
@@ -368,6 +369,7 @@ const App = (() => {
       if (act === "practice") { closeSheet(); startPractice("bubble"); }
       if (act === "practice-jini") { closeSheet(); startPractice("jini"); }
       if (act === "practice-call") { closeSheet(); startPractice("call"); }
+      if (act === "practice-walk") { closeSheet(); startPractice("walk"); }
     };
   }
 
@@ -545,6 +547,15 @@ const App = (() => {
     else renderVs();
   }
 
+  // 카메라 게임마다 '카메라가 안 될 때' 대체 조작이 달라요 (지니 잡기: 누르기 / 산책: 좌우로 밀기)
+  function camFallback(def) {
+    const walk = def && def.id === "walk";
+    return {
+      on: walk ? CONFIG.WALK.ALLOW_TOUCH_FALLBACK : CONFIG.JINI.ALLOW_TOUCH_FALLBACK,
+      text: (def && def.touchHint) || "지니를 손가락으로 눌러서 잡아요",
+    };
+  }
+
   function inputHint(def) {
     if (def && def.input === "mic") {
       const touch = CONFIG.CALL.ALLOW_TOUCH_FALLBACK ? " → 화면을 위아래로 문질러 음 높이를 대신해요" : "";
@@ -554,7 +565,8 @@ const App = (() => {
       return "준비 버튼을 누르면 마이크 허용을 물어봐요. 허용을 눌러 주세요!";
     }
     if (def && def.input === "camera") {
-      const touch = CONFIG.JINI.ALLOW_TOUCH_FALLBACK ? " → 지니를 손가락으로 눌러서 잡아요" : "";
+      const fb = camFallback(def);
+      const touch = fb.on ? " → " + fb.text : "";
       if (!window.isSecureContext) return "⚠️ https 주소가 아니라 카메라를 못 써요" + touch;
       if (!Cam.hasCamera) return "이 기기에는 카메라가 없어요" + touch;
       if (Cam.ready) return "카메라 준비 완료 👌";
@@ -641,13 +653,14 @@ const App = (() => {
   // 카메라 켜기 + 동작 인식 모델 준비. 진행해도 되면 true
   async function prepareCamera(btn) {
     const note = $("#intro-sensor");
-    const fallback = CONFIG.JINI.ALLOW_TOUCH_FALLBACK;
+    const fb = camFallback(duel.gameDef);
+    const fallback = fb.on;
     const label = btn.textContent;
     const res = await Cam.request(); // ⚠️ 버튼 누른 순간에 요청해야 허용 팝업이 떠요
     if (res !== "granted") {
       note.textContent = res === "denied" ? "카메라가 거부됐어요. " : "이 기기/주소에선 카메라를 못 써요. ";
       if (!fallback) { btn.disabled = false; return false; }
-      note.textContent += "지니를 손가락으로 눌러서 잡을게요.";
+      note.textContent += fb.text;
       return true;
     }
     btn.textContent = "동작 인식 불러오는 중…";
@@ -655,12 +668,12 @@ const App = (() => {
     try {
       await Cam.loadModel();
       Cam.startDetect(); // 미리 돌려 두면 게임 시작하자마자 인식돼요
-      note.textContent = "카메라 준비 완료 👌 폰을 세워 두고 상체가 다 보이게 한 걸음 뒤로!";
+      note.textContent = (duel.gameDef && duel.gameDef.camReadyNote) || "카메라 준비 완료 👌 폰을 세워 두고 상체가 다 보이게 한 걸음 뒤로!";
       btn.textContent = label;
       return true;
     } catch (err) {
       btn.textContent = label;
-      note.textContent = "동작 인식을 못 불러왔어요 (인터넷 연결 확인). " + (fallback ? "손가락으로 눌러서 잡을게요." : "다시 눌러 주세요.");
+      note.textContent = "동작 인식을 못 불러왔어요 (인터넷 연결 확인). " + (fallback ? fb.text : "다시 눌러 주세요.");
       if (!fallback) { btn.disabled = false; return false; }
       return true;
     }
@@ -720,6 +733,8 @@ const App = (() => {
         $("#hud-mode").textContent = t;
       },
       color: PL[Net.myRole() || "seoyoung"].color,
+      // 산책 게임: 같은 결투면 두 폰에 똑같은 장애물 길이 나오게
+      seed: practice ? Date.now() : Net.game.roundId,
     });
 
     // 새로고침 후 이어 하기: 저장된 점수부터 시작
@@ -887,10 +902,11 @@ const App = (() => {
     }
     if (duel.gameDef && duel.gameDef.input === "camera") {
       const res = await Cam.request();
-      if (res !== "granted") return toast("카메라를 못 켰어요 · 지니를 눌러서 잡아요");
+      const fbText = camFallback(duel.gameDef).text;
+      if (res !== "granted") return toast("카메라를 못 켰어요 · " + fbText);
       toast("동작 인식 불러오는 중…");
       try { await Cam.loadModel(); Cam.startDetect(); }
-      catch (e) { toast("동작 인식을 못 불러왔어요 · 지니를 눌러서 잡아요"); }
+      catch (e) { toast("동작 인식을 못 불러왔어요 · " + fbText); }
       return;
     }
     const res = await Motion.request();
@@ -913,6 +929,7 @@ const App = (() => {
     $("#setup-practice").onclick = () => startPractice("bubble");
     $("#setup-practice-jini").onclick = () => startPractice("jini");
     $("#setup-practice-call").onclick = () => startPractice("call");
+    $("#setup-practice-walk").onclick = () => startPractice("walk");
     $("#task-list").onclick = onTaskClick;
     $("#done-list").onclick = onTaskClick;
     $("#add-task").onclick = openAddSheet;
